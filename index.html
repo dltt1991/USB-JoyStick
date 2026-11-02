@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>USB 两轴摇杆 · 实时监视</title>
+  <style>
+    :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #101419; color: #e8edf2; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 42px 20px; }
+    main { max-width: 900px; margin: auto; }
+    .eyebrow { color: #8aa1b5; font-size: 12px; letter-spacing: .16em; }
+    h1 { font-size: clamp(26px, 5vw, 36px); margin: 12px 0; font-weight: 650; }
+    .intro, .help { color: #9eacba; line-height: 1.8; font-size: 14px; }
+    .connection { padding: 18px 20px; border: 1px solid #303a45; border-radius: 12px; margin: 26px 0 18px; background: #191f27; }
+    #status { color: #e8bc77; font-size: 14px; }
+    #status[data-state="connected"] { color: #62ddb7; }
+    #device-name { margin-top: 9px; color: #a7b6c5; font-size: 13px; overflow-wrap: anywhere; }
+    .dashboard { display: grid; grid-template-columns: 1.1fr 1fr; gap: 18px; }
+    .panel { background: #191f27; border: 1px solid #303a45; border-radius: 14px; padding: 24px; }
+    h2 { font-size: 14px; font-weight: 500; color: #a7b6c5; margin: 0 0 24px; }
+    .plot { margin: 16px; position: relative; aspect-ratio: 1; border: 1px solid #3d4d5a; border-radius: 50%; background: radial-gradient(circle, #62ddb710 0, transparent 70%), linear-gradient(#ffffff06 1px, transparent 1px), linear-gradient(90deg, #ffffff06 1px, transparent 1px); background-size: auto, 25% 25%, 25% 25%; }
+    .plot::before, .plot::after { content: ""; position: absolute; background: #546473; }
+    .plot::before { top: 50%; height: 1px; left: 0; right: 0; }
+    .plot::after { left: 50%; width: 1px; top: 0; bottom: 0; }
+    .axis-label { position: absolute; font-size: 11px; color: #8da0b2; }
+    .top { top: -20px; left: 50%; transform: translateX(-50%); }
+    .bottom { bottom: -20px; left: 50%; transform: translateX(-50%); }
+    .left { left: -21px; top: 50%; transform: translateY(-50%); }
+    .right { right: -21px; top: 50%; transform: translateY(-50%); }
+    #dot { width: 16px; height: 16px; background: #62ddb7; border: 3px solid #b4ffe7; border-radius: 50%; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 22px #62ddb766; z-index: 1; visibility: hidden; }
+    .reading + .reading { margin-top: 28px; }
+    .reading-header { display: flex; justify-content: space-between; align-items: center; color: #a7b6c5; font-size: 13px; }
+    output { display: block; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-variant-numeric: tabular-nums; font-size: clamp(30px, 5vw, 40px); margin: 10px 0; color: #62ddb7; }
+    meter { width: 100%; height: 12px; accent-color: #62ddb7; }
+    .range { display: flex; justify-content: space-between; font-size: 11px; color: #8295a5; margin-top: 5px; }
+    .settings { display: grid; gap: 16px; margin-top: 30px; padding-top: 22px; border-top: 1px solid #303a45; }
+    label { font-size: 13px; color: #b3c0cc; }
+    select { background: #101419; border: 1px solid #445364; border-radius: 6px; padding: 7px 9px; color: #e8edf2; font: inherit; max-width: 100%; }
+    .device-field { display: grid; gap: 8px; }
+    .axis-field { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+    input { accent-color: #62ddb7; vertical-align: middle; }
+    :focus-visible { outline: 2px solid #62ddb7; outline-offset: 4px; }
+    .help { margin: 22px 0 0; }
+    .help p { margin: 8px 0; }
+    code { color: #c3d3e0; }
+    @media (max-width: 650px) { body { padding-top: 26px; } .dashboard { grid-template-columns: 1fr; } .plot { max-width: 320px; margin: 24px auto; width: calc(100% - 32px); } }
+  </style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">USB JOYSTICK / LIVE MONITOR</div>
+  <h1>两轴摇杆实时监视</h1>
+  <div class="intro">插入 USB 摇杆，点击页面后拨动摇杆，即可查看实时数据。</div>
+
+  <section class="connection" aria-label="设备连接">
+    <div id="status" role="status">正在检查浏览器…</div>
+    <div id="device-name">尚未检测到设备</div>
+  </section>
+
+  <div class="dashboard">
+    <section class="panel">
+      <h2>实时位置</h2>
+      <div class="plot" role="img" aria-label="摇杆二维位置；精确数值见 X、Y 轴读数">
+        <span class="axis-label top">Y −100%</span><span class="axis-label bottom">Y +100%</span>
+        <span class="axis-label left">−100%</span><span class="axis-label right">+100% X</span>
+        <div id="dot"></div>
+      </div>
+    </section>
+
+    <section class="panel" aria-label="轴数据和设置">
+      <div class="reading">
+        <div class="reading-header"><label for="x-value">X 轴</label><span>水平</span></div>
+        <output id="x-value">—</output>
+        <meter id="x-meter" min="-1" max="1" value="0" aria-label="X 轴位置"></meter>
+        <div class="range"><span>−100%</span><span>0%</span><span>+100%</span></div>
+      </div>
+      <div class="reading">
+        <div class="reading-header"><label for="y-value">Y 轴</label><span>垂直</span></div>
+        <output id="y-value">—</output>
+        <meter id="y-meter" min="-1" max="1" value="0" aria-label="Y 轴位置"></meter>
+        <div class="range"><span>−100%</span><span>0%</span><span>+100%</span></div>
+      </div>
+      <div class="settings">
+        <label class="device-field">设备<select id="device"><option value="">等待设备</option></select></label>
+        <div class="axis-field"><label>原始 X 来源 <select id="x-axis" aria-label="原始 X 轴来源"></select></label><label><input id="invert-x" type="checkbox"> 显示 X 反向</label></div>
+        <div class="axis-field"><label>原始 Y 来源 <select id="y-axis" aria-label="原始 Y 轴来源"></select></label><label><input id="invert-y" type="checkbox"> 显示 Y 反向</label></div>
+      </div>
+    </section>
+  </div>
+  <div class="help">
+    <p>原始行程：X −0.7752 ～ +0.9081，Y −0.9062 ～ +0.8025。中心采用原始半径 0.002 的圆形死区；死区外沿当前方向将剩余行程映射至 0～100% 半径，超量程截断到圆周。斜向满量程时，两轴分量各约为 ±70.7%。</p>
+    <p>数值和位置已向左旋转 90°：显示 X = 原始 Y，显示 Y = −原始 X（归一化后）。默认原始 X = 轴 0、原始 Y = 轴 1；位置图中 Y 正方向朝下，反向选项作用于旋转后的显示轴。</p>
+    <p>未检测到？请保持页面在前台，点击页面后拨动摇杆；如有按钮，也按一下。请使用独立浏览器窗口，通过 <code>localhost</code> 或 HTTPS 打开。</p>
+    <p>本页面适用于被系统识别为游戏控制器的 USB 摇杆。若设备使用串口或厂家私有协议，需要根据厂家协议另行适配。</p>
+  </div>
+</main>
+<script>
+  const $ = id => document.getElementById(id);
+  let deviceSignature = '';
+  let axisSignature = '';
+  const calibration = {
+    x: { min: -0.7752, max: 0.9081 },
+    y: { min: -0.9062, max: 0.8025 },
+  };
+  const deadzone = 0.002;
+
+  function normalizeVector(x, y) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return [null, null];
+    const radius = Math.hypot(x, y);
+    if (radius <= deadzone) return [0, 0];
+    const limitX = x < 0 ? -calibration.x.min : calibration.x.max;
+    const limitY = y < 0 ? -calibration.y.min : calibration.y.max;
+    const scaledX = x / limitX;
+    const scaledY = y / limitY;
+    const scaledRadius = Math.hypot(scaledX, scaledY);
+    // The calibrated ellipse becomes a unit circle; keep the deadzone circular in raw units.
+    const boundaryRadius = radius / scaledRadius;
+    const magnitude = Math.min(1, Math.max(0, (radius - deadzone) / (boundaryRadius - deadzone)));
+    return [scaledX / scaledRadius * magnitude, scaledY / scaledRadius * magnitude];
+  }
+
+  function status(message, state = 'waiting') {
+    $('status').textContent = message;
+    $('status').dataset.state = state;
+  }
+
+  function clearReadings() {
+    for (const axis of ['x', 'y']) {
+      $(axis + '-value').textContent = '—';
+      $(axis + '-meter').value = 0;
+    }
+    $('dot').style.visibility = 'hidden';
+  }
+
+  function clearDevice() {
+    clearReadings();
+    $('device-name').textContent = '尚未检测到设备';
+    $('device').replaceChildren(new Option('等待设备', ''));
+    $('x-axis').replaceChildren();
+    $('y-axis').replaceChildren();
+    deviceSignature = '';
+    axisSignature = '';
+  }
+
+  function update() {
+    try {
+      const pads = Array.from(navigator.getGamepads()).filter(pad => pad && pad.connected);
+      const signature = JSON.stringify(pads.map(pad => [pad.index, pad.id]));
+      if (signature !== deviceSignature) {
+        const previous = $('device').value;
+        $('device').replaceChildren(...pads.map(pad => new Option(pad.id + ' · #' + pad.index, pad.index)));
+        if (pads.some(pad => String(pad.index) === previous)) $('device').value = previous;
+        deviceSignature = signature;
+      }
+      const pad = pads.find(pad => String(pad.index) === $('device').value);
+      if (!pad) {
+        clearDevice();
+        status('等待摇杆 · 请插入设备，点击页面后拨动摇杆');
+      } else {
+        $('device-name').textContent = pad.id;
+        const signature = JSON.stringify([pad.index, pad.id, pad.axes.length]);
+        if (signature !== axisSignature) {
+          for (const [axis, defaultIndex] of [['x', 0], ['y', 1]]) {
+            const select = $(axis + '-axis');
+            const previous = select.value;
+            select.replaceChildren(...pad.axes.map((_, index) => new Option('轴 ' + index, index)));
+            select.value = axisSignature && Number(previous) < pad.axes.length && previous !== ''
+              ? previous : (pad.axes.length > defaultIndex ? String(defaultIndex) : '');
+          }
+          axisSignature = signature;
+        }
+        const rawValues = ['x', 'y'].map(axis => {
+          const selected = $(axis + '-axis').value;
+          return selected === '' ? undefined : pad.axes[Number(selected)];
+        });
+        const normalized = normalizeVector(...rawValues);
+        // Visual counterclockwise rotation in the plot's downward-positive Y coordinates.
+        const values = [normalized[1], normalized[0] === null ? null : -normalized[0]]
+          .map((value, index) => value === null ? null : value * ($('invert-' + ['x', 'y'][index]).checked ? -1 : 1));
+        for (const [index, axis] of ['x', 'y'].entries()) {
+          const value = values[index];
+          const percent = value === null ? null : Number((value * 100).toFixed(1));
+          $(axis + '-value').textContent = percent === null ? '—' : (percent > 0 ? '+' : '') + percent.toFixed(1) + '%';
+          $(axis + '-meter').value = value ?? 0;
+        }
+        if (values.every(value => value !== null)) {
+          $('dot').style.visibility = 'visible';
+          $('dot').style.left = ((values[0] + 1) * 50) + '%';
+          $('dot').style.top = ((values[1] + 1) * 50) + '%';
+          status('已连接 · ' + pad.axes.length + ' 个轴 · 实时读取中', 'connected');
+        } else {
+          $('dot').style.visibility = 'hidden';
+          status('轴数据不足 · 请检查设备或重新选择 X / Y 轴');
+        }
+      }
+    } catch (error) {
+      clearDevice();
+      status('无法访问游戏控制器 · 请通过 localhost 或 HTTPS 在独立浏览器窗口打开');
+    }
+    requestAnimationFrame(update);
+  }
+
+  if (!window.isSecureContext) {
+    status('请通过 localhost 或 HTTPS 打开此页面');
+  } else if (typeof navigator.getGamepads !== 'function') {
+    status('当前浏览器不支持 Gamepad API，请尝试桌面版 Chrome 或 Edge');
+  } else {
+    update();
+  }
+</script>
+</body>
+</html>
